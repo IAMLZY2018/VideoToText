@@ -17,6 +17,7 @@ import requests
 import zipfile
 import argparse
 from api_service import start_api_server
+import shutil
 # 这里是核心代码
 class DependencyDialog(QDialog):
     def __init__(self, parent=None):
@@ -91,112 +92,20 @@ def check_and_install_dependencies():
         dialog.show()
         QApplication.processEvents()
         
-        # 定义必需的依赖
-        required = {
-            'whisper': {'package': 'openai-whisper', 'version': '>=20231117'},
-            'torch': {'package': 'torch', 'version': '>=2.0.0'},
-            'numpy': {'package': 'numpy', 'version': '>=1.20.0'},
-            'PyQt5': {'package': 'PyQt5', 'version': '>=5.15.0'},
-            'requests': {'package': 'requests', 'version': '>=2.25.0'},
-            'pillow': {'package': 'pillow', 'version': '>=8.0.0'},
-        }
+        # 快速检查基本依赖
+        dialog.set_status("正在快速检查基本依赖...")
+        dialog.set_progress(10)
         
-        dialog.set_status("正在检查Python包...")
-        missing = []
-        total = len(required)
-        for i, (module, info) in enumerate(required.items()):
-            try:
-                dialog.log_message(f"检查 {info['package']}...")
-                if not check_package_version(info['package'], info['version']):
-                    dialog.log_message(f"✗ {info['package']} 未安装或版本不匹配")
-                    missing.append(info['package'])
-                else:
-                    dialog.log_message(f"✓ {info['package']} 已安装")
-            except Exception as e:
-                dialog.log_message(f"✗ {info['package']} 检查失败: {str(e)}")
-                missing.append(info['package'])
-            dialog.set_progress(int((i + 1) / total * 50))
-            QApplication.processEvents()
-        
-        if missing:
-            dialog.set_status("正在安装缺失的依赖...")
-            dialog.log_message("\n开始安装缺失的依赖...")
-            
-            # 使用清华源加速下载
-            pip_cmd = [sys.executable, "-m", "pip", "install", "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"]
-            
-            # 先升级pip
-            try:
-                dialog.log_message("\n正在升级pip...")
-                subprocess.check_call(pip_cmd + ["--upgrade", "pip"])
-            except Exception as e:
-                dialog.log_message(f"pip升级失败，继续安装: {str(e)}")
-            
-            # 安装缺失的包
-            for i, package in enumerate(missing):
-                try:
-                    dialog.log_message(f"\n正在安装 {package}...")
-                    subprocess.check_call(pip_cmd + [package])
-                    dialog.log_message(f"✓ {package} 安装成功")
-                except Exception as e:
-                    dialog.log_message(f"✗ {package} 安装失败: {str(e)}")
-                    if package != 'triton':  # triton是可选的
-                        raise
-                progress = 50 + int((i + 1) / len(missing) * 25)
-                dialog.set_progress(progress)
-                QApplication.processEvents()
-        
-        # 检查CUDA
-        dialog.set_status("正在检查CUDA支持...")
-        if torch.cuda.is_available():
-            dialog.log_message("\n✓ CUDA可用")
-            dialog.log_message(f"GPU: {torch.cuda.get_device_name(0)}")
-            dialog.log_message(f"CUDA版本: {torch.version.cuda}")
+        # 检查CUDA可用性（不检查详细信息）
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            dialog.log_message("✓ CUDA 可用")
         else:
-            dialog.log_message("\n⚠️ CUDA不可用，将使用CPU模式")
+            dialog.log_message("⚠️ CUDA 不可用，将使用CPU模式")
         
-        # 检查ffmpeg
+        # 快速检查ffmpeg
         dialog.set_status("正在检查ffmpeg...")
-        dialog.set_progress(75)
-        QApplication.processEvents()
-        
-        def download_ffmpeg():
-            try:
-                dialog.log_message("\n正在下载ffmpeg...")
-                url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-                
-                # 使用requests下载，显示进度
-                response = requests.get(url, stream=True)
-                total_size = int(response.headers.get('content-length', 0))
-                block_size = 1024  # 1KB
-                
-                with open("ffmpeg.zip", "wb") as f:
-                    for data in response.iter_content(block_size):
-                        f.write(data)
-                        dialog.log_message(f"下载进度: {f.tell()/total_size*100:.1f}%", replace_last=True)
-                
-                dialog.log_message("\n正在解压ffmpeg...")
-                with zipfile.ZipFile("ffmpeg.zip", "r") as zip_ref:
-                    zip_ref.extractall("ffmpeg_temp")
-                
-                # 移动ffmpeg.exe到当前目录
-                ffmpeg_exe = next(Path("ffmpeg_temp").rglob("ffmpeg.exe"))
-                if os.path.exists("ffmpeg.exe"):
-                    os.remove("ffmpeg.exe")
-                os.rename(ffmpeg_exe, "ffmpeg.exe")
-                
-                # 清理临时文件
-                import shutil
-                shutil.rmtree("ffmpeg_temp")
-                os.remove("ffmpeg.zip")
-                
-                dialog.log_message("✓ ffmpeg 安装完成")
-                return True
-            except Exception as e:
-                dialog.log_message(f"✗ ffmpeg 下载失败: {str(e)}")
-                return False
-        
-        # 检查ffmpeg是否存在
+        dialog.set_progress(30)
         ffmpeg_found = False
         try:
             result = subprocess.run(['ffmpeg', '-version'], 
@@ -205,30 +114,40 @@ def check_and_install_dependencies():
                                  encoding='utf-8',
                                  errors='ignore')
             if result.returncode == 0:
-                dialog.log_message("\n✓ 系统已安装ffmpeg")
+                dialog.log_message("✓ 系统已安装ffmpeg")
                 ffmpeg_found = True
         except:
             pass
         
-        if not ffmpeg_found and not os.path.exists("ffmpeg.exe"):
-            dialog.log_message("\n✗ 未找到ffmpeg，正在下载...")
-            if not download_ffmpeg():
-                dialog.log_message("\n⚠️ ffmpeg下载失败，请手动下载并放置在程序目录")
-        elif os.path.exists("ffmpeg.exe"):
-            dialog.log_message("\n✓ 本地已有ffmpeg.exe")
+        if not ffmpeg_found and os.path.exists("ffmpeg.exe"):
+            dialog.log_message("✓ 本地已有ffmpeg.exe")
+            ffmpeg_found = True
         
-        dialog.set_status("依赖检查完成")
+        if not ffmpeg_found:
+            dialog.log_message("⚠️ 未找到ffmpeg，将在首次使用时下载")
+        
+        # 快速检查Whisper模型
+        dialog.set_status("正在检查Whisper...")
+        dialog.set_progress(60)
+        try:
+            import whisper
+            dialog.log_message("✓ Whisper 已安装")
+        except ImportError:
+            dialog.log_message("⚠️ Whisper 未安装，将在首次使用时安装")
+        
+        # 完成基本检查
+        dialog.set_status("基本检查完成")
         dialog.set_progress(100)
-        dialog.log_message("\n✓ 所有依赖检查和安装完成！")
+        dialog.log_message("\n✓ 基本检查完成！")
         QApplication.processEvents()
-        time.sleep(1)  # 让用户看到完成信息
+        time.sleep(0.5)  # 减少等待时间
         dialog.accept()
         return True
         
     except Exception as e:
         if 'dialog' in locals():
             dialog.log_message(f"\n错误: {str(e)}")
-            dialog.set_status("依赖检查失败")
+            dialog.set_status("检查失败")
             dialog.exec_()
         return False
 
@@ -247,18 +166,13 @@ class VideoProcessor(QThread):
         self.is_running = True
         self.ffmpeg_path = ffmpeg_path
         self.whisper_model = None
-        
-        # 检查CUDA工具包
-        if self.use_gpu:
-            try:
-                import triton
-                self.log_signal.emit("✓ Triton CUDA 工具包已安装")
-            except ImportError:
-                self.log_signal.emit("⚠️ Triton CUDA 工具包未安装，某些GPU加速功能将不可用")
-                self.log_signal.emit("💡 可以运行: pip install triton 来安装")
 
     def run(self):
         try:
+            # 检查并安装必要的依赖
+            if not self.check_and_install_dependencies():
+                return
+
             # 初始化Whisper模型
             self.log_signal.emit("正在加载Whisper模型...")
             device = "cuda" if self.use_gpu else "cpu"
@@ -465,6 +379,97 @@ class VideoProcessor(QThread):
     def stop(self):
         self.is_running = False
 
+    def check_and_install_dependencies(self):
+        """检查并安装必要的依赖"""
+        try:
+            # 检查CUDA工具包（如果使用GPU）
+            if self.use_gpu:
+                try:
+                    import triton
+                    self.log_signal.emit("✓ Triton CUDA 工具包已安装")
+                except ImportError:
+                    self.log_signal.emit("⚠️ Triton CUDA 工具包未安装，某些GPU加速功能将不可用")
+
+            # 检查ffmpeg
+            if not self.ffmpeg_path:
+                try:
+                    result = subprocess.run(['ffmpeg', '-version'], 
+                                         capture_output=True, 
+                                         text=True, 
+                                         encoding='utf-8',
+                                         errors='ignore')
+                    if result.returncode == 0:
+                        self.log_signal.emit("✓ 系统已安装ffmpeg")
+                        self.ffmpeg_path = 'ffmpeg'
+                    else:
+                        raise Exception("ffmpeg执行失败")
+                except:
+                    # 尝试下载ffmpeg
+                    self.log_signal.emit("正在下载ffmpeg...")
+                    if not self.download_ffmpeg():
+                        self.log_signal.emit("❌ ffmpeg下载失败，请手动下载并放置在程序目录")
+                        return False
+
+            # 检查whisper
+            try:
+                import whisper
+            except ImportError:
+                self.log_signal.emit("正在安装whisper...")
+                try:
+                    subprocess.check_call([
+                        sys.executable, "-m", "pip", "install",
+                        "-i", "https://pypi.tuna.tsinghua.edu.cn/simple",
+                        "openai-whisper"
+                    ])
+                except Exception as e:
+                    self.log_signal.emit(f"❌ whisper安装失败: {str(e)}")
+                    return False
+
+            return True
+
+        except Exception as e:
+            self.log_signal.emit(f"依赖检查失败: {str(e)}")
+            return False
+
+    def download_ffmpeg(self):
+        """下载ffmpeg"""
+        try:
+            url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+            
+            # 使用requests下载
+            response = requests.get(url, stream=True)
+            total_size = int(response.headers.get('content-length', 0))
+            block_size = 1024  # 1KB
+            
+            with open("ffmpeg.zip", "wb") as f:
+                downloaded = 0
+                for data in response.iter_content(block_size):
+                    downloaded += len(data)
+                    f.write(data)
+                    progress = (downloaded / total_size) * 100
+                    self.log_signal.emit(f"下载进度: {progress:.1f}%")
+            
+            self.log_signal.emit("正在解压ffmpeg...")
+            with zipfile.ZipFile("ffmpeg.zip", "r") as zip_ref:
+                zip_ref.extractall("ffmpeg_temp")
+            
+            # 移动ffmpeg.exe
+            ffmpeg_exe = next(Path("ffmpeg_temp").rglob("ffmpeg.exe"))
+            if os.path.exists("ffmpeg.exe"):
+                os.remove("ffmpeg.exe")
+            os.rename(ffmpeg_exe, "ffmpeg.exe")
+            
+            # 清理临时文件
+            shutil.rmtree("ffmpeg_temp")
+            os.remove("ffmpeg.zip")
+            
+            self.ffmpeg_path = "ffmpeg.exe"
+            self.log_signal.emit("✓ ffmpeg 安装完成")
+            return True
+            
+        except Exception as e:
+            self.log_signal.emit(f"❌ ffmpeg 下载失败: {str(e)}")
+            return False
 
 class HelpButton(QPushButton):
     def __init__(self, parent=None):

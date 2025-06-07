@@ -1,28 +1,43 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
+block_cipher = None
 
 a = Analysis(
     ['videoToText.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'torch',
+        'numpy',
+        'whisper',
+        'requests',
+        'PyQt5',
+        'pillow',
+        'triton',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
-    optimize=0,
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
     [],
-    name='videoToText',
+    name='VideoToText',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,5 +50,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['app.ico'],
+    icon='app.ico' if os.path.exists('app.ico') else None,
 )

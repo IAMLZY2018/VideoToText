@@ -1,63 +1,86 @@
 import os
+import sys
 import shutil
 import subprocess
 from pathlib import Path
 
-def clean_build():
-    """清理build和dist目录"""
-    for dir_name in ['build', 'dist']:
-        if os.path.exists(dir_name):
-            shutil.rmtree(dir_name)
-    for file in Path('.').glob('*.spec'):
-        if file.name != 'videoToText.spec':
-            file.unlink()
+def clean_build_folders():
+    """清理构建文件夹"""
+    folders = ['build', 'dist']
+    for folder in folders:
+        if os.path.exists(folder):
+            shutil.rmtree(folder)
+    spec_file = 'videoToText.spec'
+    if os.path.exists(spec_file):
+        os.remove(spec_file)
 
-def download_ffmpeg():
-    """下载ffmpeg"""
-    import requests
-    print("正在下载ffmpeg...")
-    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-    r = requests.get(url)
-    with open("ffmpeg.zip", "wb") as f:
-        f.write(r.content)
+def build_executable():
+    """构建可执行文件"""
+    print("开始构建可执行文件...")
     
-    # 解压
-    import zipfile
-    with zipfile.ZipFile("ffmpeg.zip", "r") as zip_ref:
-        zip_ref.extractall("ffmpeg_temp")
+    # PyInstaller命令
+    cmd = [
+        'pyinstaller',
+        '--noconfirm',
+        '--onefile',
+        '--windowed',
+        '--icon=app.ico',  # 如果有图标的话
+        '--add-data=LICENSE;.',  # 如果有LICENSE文件的话
+        '--name=VideoToText',
+        '--hidden-import=torch',
+        '--hidden-import=whisper',
+        '--hidden-import=numpy',
+        '--hidden-import=PyQt5',
+        '--hidden-import=requests',
+        '--hidden-import=pillow',
+        'videoToText.py'
+    ]
     
-    # 移动ffmpeg.exe
-    ffmpeg_path = next(Path("ffmpeg_temp").rglob("ffmpeg.exe"))
-    shutil.copy(ffmpeg_path, "dist/ffmpeg.exe")
+    try:
+        subprocess.run(cmd, check=True)
+        print("构建成功！")
+        print(f"可执行文件位置: {os.path.abspath('dist/VideoToText.exe')}")
+    except subprocess.CalledProcessError as e:
+        print(f"构建失败: {e}")
+        sys.exit(1)
+
+def copy_additional_files():
+    """复制额外需要的文件到dist目录"""
+    dist_dir = Path('dist')
+    if not dist_dir.exists():
+        return
     
-    # 清理
-    os.remove("ffmpeg.zip")
-    shutil.rmtree("ffmpeg_temp")
+    # 复制README文件（如果存在）
+    if os.path.exists('README.md'):
+        shutil.copy2('README.md', dist_dir / 'README.md')
+    
+    # 复制ffmpeg（如果存在）
+    if os.path.exists('ffmpeg.exe'):
+        shutil.copy2('ffmpeg.exe', dist_dir / 'ffmpeg.exe')
+
+def create_installer():
+    """创建安装包（可选）"""
+    # 这里可以添加创建安装包的代码
+    # 例如使用NSIS或Inno Setup
+    pass
 
 def main():
     # 清理旧的构建文件
-    clean_build()
+    clean_build_folders()
     
-    # 生成图标
-    print("正在生成图标...")
-    subprocess.run(["python", "create_icon.py"], check=True)
+    # 构建可执行文件
+    build_executable()
     
-    # 打包程序
-    print("正在打包程序...")
-    subprocess.run(["pyinstaller", "--clean", "videoToText.spec"], check=True)
+    # 复制额外文件
+    copy_additional_files()
     
-    # 下载ffmpeg
-    download_ffmpeg()
+    print("\n构建完成！")
+    print("请确保在dist目录中包含以下文件：")
+    print("1. VideoToText.exe")
+    print("2. ffmpeg.exe（如果需要）")
+    print("3. README.md（如果存在）")
     
-    # 复制README
-    shutil.copy("README.txt", "dist/使用说明.txt")
-    
-    # 创建发布zip
-    print("正在创建发布包...")
-    shutil.make_archive("视频转文字工具", "zip", "dist")
-    
-    print("打包完成！")
-    print("发布文件: 视频转文字工具.zip")
+    input("\n按回车键退出...")
 
 if __name__ == "__main__":
     main() 
