@@ -125,3 +125,7 @@ MIT License
 - [PyQt5](https://www.riverbankcomputing.com/software/pyqt/)
 - [FFmpeg](https://ffmpeg.org/)
 - [PyTorch](https://pytorch.org/) 
+
+## 💻软件截图
+
+![image-20250608044514981](https://typeropic.oss-cn-beijing.aliyuncs.com/cp/image-20250608044514981.png)
